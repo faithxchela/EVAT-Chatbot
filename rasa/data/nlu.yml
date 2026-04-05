@@ -46,6 +46,12 @@ nlu:
     - 1
     - 2
     - 3
+    - route planning
+    - plan route
+    - emergency charging
+    - emergency
+    - charging preferences
+    - preference charging
 
 
 - intent: goodbye
@@ -53,6 +59,61 @@ nlu:
     - bye
     - pp
     - gud bye
+    - goodbye
+    - thanks bye
+    - see you
+    - no thanks
+    - thank you
+
+- intent: route_info
+  examples: |
+    - from [Carlton](start_location) to [Geelong](end_location)
+    - from [Richmond](start_location) to [South Yarra](end_location)
+    - from [Melbourne](start_location) to [Brighton](end_location)
+    - route from [Docklands](start_location) to [Frankston](end_location)
+    - i am going from [Brunswick](start_location) to [Dandenong](end_location)
+    - travel from [St Kilda](start_location) to [Geelong](end_location)
+    - from Carlton to Geelong
+    - from Richmond to Brighton
+    - from Melbourne to Frankston
+    - From Mulgrave to Collingwood
+    - from mulgrave to collingwood
+    - from Mulgrave to Ringwood
+    - from Mulgrave to Port Melbourne
+    - i'm travelling from Mulgrave to Collingwood
+    - I am going from Carlton to Port Melbourne
+    - plan route from Richmond to Collingwood
+    - route from Box Hill to Ringwood
+    - drive from Dandenong to Melbourne
+    - need route from St Kilda to Carlton
+    - go from Geelong to Melbourne
+    - from Glen Waverley to CBD
+    - from Camberwell to South Melbourne
+    - from Doncaster to Port Melbourne
+    - can you plan from Richmond to Ringwood
+    - show route from Brunswick to Docklands
+    - take me from Collingwood to Carlton
+    - from Mulgrave to Collingwood please
+    - route: from Mulgrave to Collingwood
+    - from Hawthorn to South Yarra
+
+- intent: action_selection
+  examples: |
+    - get directions
+    - directions
+    - check availability
+    - plan another route
+    - return to main menu
+    - main menu
+    - go back to menu
+
+- intent: follow_up
+  examples: |
+    - show more options
+    - any other stations
+    - can you suggest another one
+    - start again
+    - what else can i do
 
 
 

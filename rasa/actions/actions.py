@@ -43,6 +43,25 @@ def format_station_list(stations: List[Dict[str, Any]], limit: int = 5, show_ind
     return "\n".join(lines)
 
 
+def extract_from_to_route(text: str) -> Tuple[Optional[str], Optional[str]]:
+    """Extract start/end route locations from free text like 'from X to Y'."""
+    if not text:
+        return None, None
+    import re
+    match = re.search(
+        r'^\s*from\s+(.+?)\s+\bto\b\s+(.+?)\s*$',
+        text.strip(),
+        flags=re.IGNORECASE
+    )
+    if not match:
+        return None, None
+    start = match.group(1).strip()
+    end = match.group(2).strip()
+    if not start or not end:
+        return None, None
+    return start, end
+
+
 def _map_station_for_ui(station: Dict[str, Any]) -> Dict[str, Any]:
     """Convert internal station dict to frontend card schema.
 
@@ -256,6 +275,22 @@ class ActionHandleAnyInput(Action):
                 text=f"⚡ **Charging Preferences**\n\n{Messages.PREFERENCE_PROMPT}\n\n• Cheapest 💰\n• Fastest ⚡\n• Premium 🌟")
             return [SlotSet("conversation_context", ConversationContexts.PREFERENCE_CHARGING)]
 
+        #Quick keyword routing to reduce fallback when users type labels instead if 1/2/3.
+        elif any(k in lower_msg for k in ["route", "trip", "journey", "plan"]):
+            dispatcher.utter_message(
+                text=f"🗺️ **Route Planning**\n\n{Messages.ROUTE_PLANNING_PROMPT}\n\n💡 **Example:** 'from Carlton to Geelong'")
+            return [SlotSet("conversation_context", ConversationContexts.ROUTE_PLANNING)]
+        
+        elif any(k in lower_msg for k in ["emergency", "urgent", "battery low", "low battery"]):
+            dispatcher.utter_message(
+                text=f"🚨 **Emergency Charging**\n\n{Messages.EMERGENCY_PROMPT}\n\n💡 **Example:** 'Richmond'")
+            return [SlotSet("conversation_context", ConversationContexts.EMERGENCY_CHARGING)]
+        
+        elif any(k in lower_msg for k in ["preference", "cheapest", "fastest", "premium"]):
+            dispatcher.utter_message(
+                text=f"⚡ **Charging Preferences**\n\n{Messages.PREFERENCE_PROMPT}\n\n• Cheapest 💰\n• Fastest ⚡\n• Premium 🌟")
+            return [SlotSet("conversation_context", ConversationContexts.PREFERENCE_CHARGING)]
+        
         # If not a valid menu option, show the menu again
         else:
 
@@ -503,51 +538,32 @@ class ActionHandleRouteInput(Action):
             raw_text = raw_text.strip()
             if raw_text:
                 import re
-                # Strip an optional leading 'to'
-                dest_text = re.sub(r'^\s*to\b', '', raw_text,
-                                   flags=re.IGNORECASE).strip()
+                lower_raw = raw_text.lower()
+                dest_text = None
+
+                # Destination-only formats when user location is already known:
+                # 1) "to Collingwood"
+                if re.match(r'^\s*to\b', raw_text, flags=re.IGNORECASE):
+                    dest_text = re.sub(r'^\s*to\b', '', raw_text,
+                                       flags=re.IGNORECASE).strip()
+                # 2) "Collingwood" (short destination phrase only)
+                elif 'from' not in lower_raw and ' to ' not in lower_raw and len(raw_text.split()) <= 4:
+                    dest_text = raw_text
+
                 if dest_text:
                     start_location = (stored_lat, stored_lng)
                     end_location = dest_text
                     return self._process_route(dispatcher, start_location, end_location)
 
         # Check for traditional "from [start] to [destination]" format
-        if 'from' in message and 'to' in message:
+        parsed_start, parsed_end = extract_from_to_route(
+            tracker.latest_message.get('text', '') or ''
+        )
+        if parsed_start and parsed_end:
 
             # Extract start and end locations from the message
-            start_location = None
-            end_location = None
-
-            try:
-                # Split by 'from' and take everything after it
-                after_from = message.split('from', 1)[1]
-
-                # Use regex to find the word "to" (not just any "to")
-                import re
-                # Look for "to" as a word boundary, not inside other words
-                to_match = re.search(r'\bto\b', after_from, re.IGNORECASE)
-
-                if to_match:
-                    to_index = to_match.start()
-                    start_location = after_from[:to_index].strip()
-                    # +2 for "to"
-                    end_location = after_from[to_index + 2:].strip()
-
-                    # Validate that we actually got meaningful text
-                    if start_location and end_location and len(start_location) > 0 and len(end_location) > 0:
-                        pass
-                    else:
-
-                        start_location = None
-                        end_location = None
-                else:
-
-                    start_location = None
-                    end_location = None
-            except Exception as e:
-
-                start_location = None
-                end_location = None
+            start_location = parsed_start
+            end_location = parsed_end
 
             if not start_location or not end_location:
                 if not start_location and not end_location:
@@ -852,8 +868,14 @@ class ActionHandleRouteInfo(Action):
         raw_text = tracker.latest_message.get('text', '') or ''
         raw_text = raw_text.strip()
         if raw_text:
-            import re
+            # Handle explicit "from X to Y" messages here as a safety net when route_info
+            # is predicted and this action is selected.
+            parsed_start, parsed_end = extract_from_to_route(raw_text)
+            if parsed_start and parsed_end:
+                return self._find_route_stations(dispatcher, parsed_start, parsed_end)
+
             # Only treat messages that START with 'to' as destination-only inputs here
+            import re
             if re.match(r'^\s*to\b', raw_text, flags=re.IGNORECASE):
                 dest_text = re.sub(r'^\s*to\b', '', raw_text,
                                    flags=re.IGNORECASE).strip()

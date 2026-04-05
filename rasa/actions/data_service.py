@@ -276,7 +276,26 @@ class ChargingStationDataService:
                     route_stations, start_coords, end_coords)
             return route_stations
         else:
-            logger.warning("No stations found along route")
+            logger.warning(
+                "No stations found along route corridor; trying destination-nearby fallback")
+            fallback_radius = max(8.0, min(route_distance * 0.5, 20.0))
+            nearby_destination = self.get_nearby_stations(
+                end_coords, radius_km=fallback_radius)
+            if nearby_destination:
+                for station in nearby_destination:
+                    station_coords = (
+                        station.get('latitude'),
+                        station.get('longitude')
+                    )
+                    if isinstance(station_coords[0], (int, float)) and isinstance(station_coords[1], (int, float)):
+                        station['distance_from_start'] = self._calculate_distance(
+                            start_coords, station_coords)
+                        station['distance_from_end'] = self._calculate_distance(
+                            station_coords, end_coords)
+                logger.info(
+                    f"Fallback returned {len(nearby_destination)} stations near destination")
+                return nearby_destination[:SEARCH_CONFIG['MAX_RESULTS']]
+            logger.warning("No stations found in destination-nearby fallback")
             return []
 
     def _get_stations_along_route(self, start_coords: Tuple[float, float],
@@ -305,11 +324,12 @@ class ChargingStationDataService:
         except Exception:
             polyline = None
 
-        # If no polyline available, do not attempt alternative techniques
+        # If no real-time polyline, fallback to a straight-line corridor so route planning
+        # still works when live routing API is unavailable.
         if not polyline:
             logger.warning(
-                "No polyline available from real-time route; skipping station search along route")
-            return []
+                "No polyline available from real-time route; using straight-line fallback corridor")
+            polyline = [start_coords, end_coords]
 
         # Get all stations within the search area
         all_stations = []

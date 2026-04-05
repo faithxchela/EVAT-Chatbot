@@ -182,6 +182,10 @@ slots:
       - type: custom
 
 responses:
+  utter_default:
+    - text: "I didn’t quite catch that. Please choose one option:\n1) Route planning\n2) Emergency charging\n3) Charging preferences"
+  utter_ask_rephrase:
+    - text: "Could you rephrase that? For routes, try: 'from Carlton to Geelong'."
   utter_goodbye:
     - text: "Goodbye! Have a great journey! 🚗⚡"
 
@@ -217,4 +221,3 @@ actions:
 session_config:
   session_expiration_time: 60
   carry_over_slots_to_new_session: true
-
