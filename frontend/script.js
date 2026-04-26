@@ -1,3 +1,6 @@
+// Set RASA_URL in window (injected by deploy) or fall back to local dev
+const RASA_URL = window.RASA_URL || "http://localhost:5005";
+
 const chat = document.getElementById("chat");
 const form = document.getElementById("chat-form");
 const userInput = document.getElementById("user-input");
@@ -333,7 +336,7 @@ async function sendLocationToRasa() {
     message: "hello",
     metadata: userLocation,
   };
-  const res = await fetch("http://localhost:5005/webhooks/rest/webhook", {
+  const res = await fetch("${RASA_URL}/webhooks/rest/webhook", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -383,7 +386,7 @@ async function sendMessage(message) {
   typingIndicator.classList.remove("hidden");
   try {
     const payload = { sender: "user", message, metadata: userLocation || {} };
-    const response = await fetch("http://localhost:5005/webhooks/rest/webhook", {
+    const response = await fetch("${RASA_URL}/webhooks/rest/webhook", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

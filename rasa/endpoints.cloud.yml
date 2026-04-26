@@ -1,0 +1,2 @@
+action_endpoint:
+  url: "${RASA_ACTIONS_URL}/webhook"

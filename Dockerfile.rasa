@@ -1,0 +1,20 @@
+FROM rasa/rasa:3.6.15
+
+WORKDIR /app
+
+USER root
+
+# Copy Rasa project files
+COPY rasa/domain.yml ./domain.yml
+COPY rasa/config.yml ./config.yml
+COPY rasa/credentials.yml ./credentials.yml
+COPY rasa/endpoints.cloud.yml ./endpoints.yml
+COPY rasa/data/ ./data/
+COPY rasa/models/20260426-155101-relative-bandit.tar.gz ./models/
+
+USER 1001
+
+EXPOSE 5005
+
+# RASA_ACTIONS_URL is injected at deploy time via --set-env-vars
+CMD ["run", "--enable-api", "--cors", "*", "--port", "5005"]

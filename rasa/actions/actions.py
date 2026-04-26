@@ -4,6 +4,7 @@ from rasa_sdk.executor import CollectingDispatcher
 from typing import Any, Text, Dict, List, Optional, Tuple
 from urllib.parse import quote_plus
 import logging
+import re
 
 from actions.data_service import data_service
 from actions.constants import ConversationContexts, MainMenuOptions, PreferenceTypes, ActionTypes, Messages
