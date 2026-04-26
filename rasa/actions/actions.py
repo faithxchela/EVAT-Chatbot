@@ -158,88 +158,85 @@ class ActionCollectInitialLocation(Action):
         return "action_collect_initial_location"
 
     def run(self, dispatcher: CollectingDispatcher, tracker: Tracker, domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
-        # Check if this is the first time (greeting)
         conversation_context = tracker.get_slot("conversation_context")
 
-        if not conversation_context:
-            # First time - show greeting and ask for location
-            dispatcher.utter_message(
-                text="Hello! Welcome to Melbourne EV Charging Assistant! ⚡\n\n"
-                     "📍 **Getting your location...**\n\n"
-                     "Please accept the location permission when prompted.\n\n"
-            )
-            return [SlotSet("conversation_context", ConversationContexts.INITIAL_LOCATION_COLLECTION)]
-
-        # Check for user location from frontend metadata first
+        # Check GPS metadata first — the frontend sends it on the initial "hello"
         user_lat = tracker.latest_message.get('metadata', {}).get('lat')
         user_lng = tracker.latest_message.get('metadata', {}).get('lng')
 
+        if not conversation_context and user_lat and user_lng:
+            # GPS arrived on the initial hello — skip "please share location" entirely
+            dispatcher.utter_message(
+                text="Hello! Welcome to Melbourne EV Charging Assistant! ⚡\n\n"
+                     "✅ **Location detected!** Now I can help you find the best charging options.\n\n"
+                     "Please select an option:\n\n"
+                     "1. 🗺️ **Route Planning** - Plan charging stops for your journey\n"
+                     "2. 🚨 **Emergency Charging** - Find nearest stations when battery is low\n"
+                     "3. ⚡ **Charging Preferences** - Find stations by your preferences\n\n"
+                     "🎯 Type 1, 2, or 3 to continue!")
+            return [
+                SlotSet("user_lat", user_lat),
+                SlotSet("user_lng", user_lng),
+                SlotSet("conversation_context", None),
+            ]
+
+        if not conversation_context:
+            # First visit, no GPS — ask for location
+            dispatcher.utter_message(
+                text="Hello! Welcome to Melbourne EV Charging Assistant! ⚡\n\n"
+                     "📍 Please share your location or type your suburb name (e.g. Richmond) to get started.")
+            return [SlotSet("conversation_context", ConversationContexts.INITIAL_LOCATION_COLLECTION)]
+
+        # Already in INITIAL_LOCATION_COLLECTION — user is typing their suburb
         if user_lat and user_lng:
+            # GPS came in on a follow-up message
             dispatcher.utter_message(
                 text="✅ **Location detected!** Now I can help you find the best charging options.\n\n"
                      "Please select an option:\n\n"
                      "1. 🗺️ **Route Planning** - Plan charging stops for your journey\n"
                      "2. 🚨 **Emergency Charging** - Find nearest stations when battery is low\n"
                      "3. ⚡ **Charging Preferences** - Find stations by your preferences\n\n"
-                     "**🎯 Type 1, 2, or 3 to continue!**")
-
-            # Store the coordinates for future use
+                     "🎯 Type 1, 2, or 3 to continue!")
             return [
                 SlotSet("user_lat", user_lat),
                 SlotSet("user_lng", user_lng),
-                SlotSet("conversation_context", None)  # Reset to show menu
+                SlotSet("conversation_context", None),
             ]
-        else:
-            # Check if user typed a suburb name
-            message = tracker.latest_message.get('text', '').strip()
 
-            if message and len(message) > 0:
-                # Try to get coordinates from suburb name
-                try:
-                    coords = data_service._get_location_coordinates(message)
-                    if coords:
-                        lat, lng = coords
-                        dispatcher.utter_message(
-                            text=f"✅ **Location set to {message}!** Now I can help you find the best charging options.\n\n"
-                                 "Please select an option:\n\n"
-                                 "1. 🗺️ **Route Planning** - Plan charging stops for your journey\n"
-                                 "2. 🚨 **Emergency Charging** - Find nearest stations when battery is low\n"
-                                 "3. ⚡ **Charging Preferences** - Find stations by your preferences\n\n"
-                            "**🎯 Type 1, 2, or 3 to continue!**")
+        # User typed a suburb name
+        message = tracker.latest_message.get('text', '').strip()
 
-                        return [
-                            SlotSet("user_lat", lat),
-                            SlotSet("user_lng", lng),
-                            SlotSet("current_location", message),
-                            # Reset to show menu
-                            SlotSet("conversation_context", None)
-                        ]
-                    else:
-                        dispatcher.utter_message(
-                            text=f"❌ **Location not found**\n\n"
-                                 f"I couldn't find '{message}' in Melbourne.\n\n"
-                                 "**Please try:**\n"
-                                 "• A different suburb name (e.g., 'Richmond', 'Carlton')\n"
-                                 "• Share your GPS location 📱\n\n"
-                                 "💡 **Tip:** Make sure the suburb is in Melbourne!")
-                        return []
-                except Exception as e:
+        if message:
+            try:
+                coords = data_service._get_location_coordinates(message)
+                if coords:
+                    lat, lng = coords
                     dispatcher.utter_message(
-                        text="❌ **Error processing location**\n\n"
-                             "Please try:\n"
-                             "• A different suburb name\n"
-                             "• Share your GPS location 📱")
+                        text=f"✅ **Location set to {message}!** Now I can help you find the best charging options.\n\n"
+                             "Please select an option:\n\n"
+                             "1. 🗺️ **Route Planning** - Plan charging stops for your journey\n"
+                             "2. 🚨 **Emergency Charging** - Find nearest stations when battery is low\n"
+                             "3. ⚡ **Charging Preferences** - Find stations by your preferences\n\n"
+                             "🎯 Type 1, 2, or 3 to continue!")
+                    return [
+                        SlotSet("user_lat", lat),
+                        SlotSet("user_lng", lng),
+                        SlotSet("current_location", message),
+                        SlotSet("conversation_context", None),
+                    ]
+                else:
+                    dispatcher.utter_message(
+                        text=f"❌ I couldn't find '{message}' in Melbourne. "
+                             "Please try a different suburb name (e.g. Richmond, Carlton).")
                     return []
-            else:
-                # No message, ask again
+            except Exception:
                 dispatcher.utter_message(
-                    text="📍 **Location Required**\n\n"
-                         "I need your current location to help you.\n\n"
-                    #  "**Please either:**\n"
-                    #  "• Share your GPS location 📱\n"
-                    #  "• Type your suburb name (e.g., 'Richmond')\n\n"
-                         "💡 **Tip:** Sharing your location gives you the most accurate results!")
+                    text="❌ Error processing location. Please try a suburb name or share your GPS location.")
                 return []
+        else:
+            dispatcher.utter_message(
+                text="📍 Please type your suburb name (e.g. Richmond) to get started.")
+            return []
 
 
 class ActionHandleAnyInput(Action):
@@ -312,6 +309,12 @@ class ActionHandleMenuSelection(Action):
         conversation_context = tracker.get_slot("conversation_context")
 
         if conversation_context == ConversationContexts.ROUTE_PLANNING_RESULTS:
+            lower = message.lower().strip()
+            # Auto-fire guard: when context just changed to route_planning_results the
+            # message is still the route input (e.g. "to Carlton") — skip station matching.
+            if (re.match(r'^\d+$', lower) or ' to ' in lower
+                    or lower.startswith('to ') or lower.startswith('from ')):
+                return []
 
             # Get the route information from slots
             start_location = tracker.get_slot("start_location")
@@ -357,17 +360,7 @@ class ActionHandleMenuSelection(Action):
                     ]
                 else:
                     dispatcher.utter_message(
-                        text=f"❌ **Station not found**\n\n"
-                             f"Please select a station from the list shown above:\n\n"
-                             f"💡 **Available stations:**\n")
-
-                    # Show the available stations again
-                    dispatcher.utter_message(text=format_station_list(
-                        stations, limit=10, show_indices=True))
-
-                    dispatcher.utter_message(
-                        text="**Simply type the station name to get details**")
-
+                        text="Station not found — please type the exact name from the list above.")
                     return []
             else:
                 # Keep user in route results; don't reset context on failure
@@ -427,27 +420,13 @@ class ActionHandleMenuSelection(Action):
                     start_location, end_location)
 
                 if stations:
+                    start_display = "Your Location" if isinstance(start_location, tuple) else start_location
                     _send_station_cards(dispatcher, stations, limit=10)
-                    response = f"🎯 **Route Confirmed:** {start_location} → {end_location}\n\n"
-                    response += f"Found {len(stations)} charging stations along your route:\n\n"
+                    dispatcher.utter_message(
+                        text=f"Found {len(stations)} station{'s' if len(stations) != 1 else ''} along your route "
+                             f"from {start_display} to {end_location}. Tap a card or type a station name.")
+                    displayed = [{'name': s.get('name', f'Station {i+1}')} for i, s in enumerate(stations[:10])]
 
-                    displayed = []
-                    for i, station in enumerate(stations[:10]):
-                        response += f"**{i+1}. {station.get('name', f'Station {i+1}')}**\n"
-                        dist = station.get('distance_km')
-                        if isinstance(dist, (int, float)):
-                            response += f"📍 {dist:.1f} km away\n\n"
-                        else:
-                            response += f"📍 Distance info unavailable\n\n"
-                        displayed.append({
-                            'name': station.get('name', f'Station {i+1}')
-                        })
-
-                    response += "💡 Simply type the station name"
-
-                    dispatcher.utter_message(text=response)
-
-                    # Set the conversation context to ROUTE_PLANNING_RESULTS so station selection works
                     return [
                         SlotSet("start_location", start_location),
                         SlotSet("end_location", end_location),
@@ -588,31 +567,16 @@ class ActionHandleRouteInput(Action):
                         start_location, end_location)
 
                     if stations:
+                        start_display = "Your Location" if isinstance(start_location, tuple) else start_location
                         _send_station_cards(dispatcher, stations, limit=10)
-                        response = f"🎯 **Route Confirmed:** {start_location} → {end_location}\n\n"
-                        response += f"Found {len(stations)} charging stations along your route:\n\n"
-
-                        displayed = []
-                        for i, station in enumerate(stations[:3]):
-                            response += f"**{i+1}. {station.get('name', f'Station {i+1}')}**\n"
-                            dist = station.get('distance_km')
-                            if isinstance(dist, (int, float)):
-                                response += f"📍 {dist:.1f} km away\n\n"
-                            else:
-                                response += f"📍 Distance info unavailable\n\n"
-                            displayed.append({
-                                'name': station.get('name', f'Station {i+1}')
-                            })
-
-                        response += "**Which station would you like to know more about?**\n\n"
-                        response += "💡 Simply type the station name"
-
-                        dispatcher.utter_message(text=response)
-
-                        # Set the conversation context to ROUTE_PLANNING_RESULTS so station selection works
+                        dispatcher.utter_message(
+                            text=f"Found {len(stations)} station{'s' if len(stations) != 1 else ''} along your route "
+                                 f"from {start_display} to {end_location}. Tap a card or type a station name.")
+                        displayed = [{'name': s.get('name', f'Station {i+1}')} for i, s in enumerate(stations[:10])]
                         return [
                             SlotSet("start_location", start_location),
                             SlotSet("end_location", end_location),
+                            SlotSet("displayed_stations", displayed),
                             SlotSet("conversation_context",
                                     ConversationContexts.ROUTE_PLANNING_RESULTS)
                         ]
@@ -720,31 +684,16 @@ class ActionHandleRouteInput(Action):
                 start_location, end_location)
 
             if stations:
+                start_display = "Your Location" if isinstance(start_location, tuple) else start_location
                 _send_station_cards(dispatcher, stations, limit=10)
-                response = f"🎯 **Route Confirmed:** {start_location} → {end_location}\n\n"
-                response += f"Found {len(stations)} charging stations along your route:\n\n"
-
-                displayed = []
-                for i, station in enumerate(stations[:3]):
-                    response += f"**{i+1}. {station.get('name', f'Station {i+1}')}**\n"
-                    dist = station.get('distance_km')
-                    if isinstance(dist, (int, float)):
-                        response += f"📍 {dist:.1f} km away\n\n"
-                    else:
-                        response += f"📍 Distance info unavailable\n\n"
-                    displayed.append({
-                        'name': station.get('name', f'Station {i+1}')
-                    })
-
-                response += "**Which station would you like to know more about?**\n\n"
-                response += "💡 Simply type the station name"
-
-                dispatcher.utter_message(text=response)
-
-                # Set the conversation context to ROUTE_PLANNING_RESULTS so station selection works
+                dispatcher.utter_message(
+                    text=f"Found {len(stations)} station{'s' if len(stations) != 1 else ''} along your route "
+                         f"from {start_display} to {end_location}. Tap a card or type a station name.")
+                displayed = [{'name': s.get('name', f'Station {i+1}')} for i, s in enumerate(stations[:10])]
                 return [
                     SlotSet("start_location", start_location),
                     SlotSet("end_location", end_location),
+                    SlotSet("displayed_stations", displayed),
                     SlotSet("conversation_context",
                             ConversationContexts.ROUTE_PLANNING_RESULTS)
                 ]
@@ -906,22 +855,16 @@ class ActionHandleRouteInfo(Action):
             start_location, end_location)
 
         if stations:
-            # Format start location for display
-            if isinstance(start_location, tuple):
-                start_display = f"Your Location ({start_location[0]:.4f}, {start_location[1]:.4f})"
-            else:
-                start_display = start_location
-
-            response = f"🎯 Found {len(stations)} charging stations from **{start_display}** to **{end_location}**:\n\n"
-            response += format_station_list(stations,
-                                            limit=5, show_indices=False) + "\n\n"
-            response += "**Which station would you like to know more about?**\n\n"
-
-            dispatcher.utter_message(text=response)
+            start_display = "Your Location" if isinstance(start_location, tuple) else start_location
+            _send_station_cards(dispatcher, stations, limit=10)
+            dispatcher.utter_message(
+                text=f"Found {len(stations)} station{'s' if len(stations) != 1 else ''} along your route "
+                     f"from {start_display} to {end_location}. Tap a card or type a station name.")
+            displayed = [{'name': s.get('name', f'Station {i+1}')} for i, s in enumerate(stations[:10])]
             return [
                 SlotSet("conversation_context",
                         ConversationContexts.ROUTE_PLANNING_RESULTS),
-                SlotSet("displayed_stations", stations[:5]),
+                SlotSet("displayed_stations", displayed),
                 SlotSet("start_location", start_location),
                 SlotSet("end_location", end_location)
             ]
@@ -949,11 +892,7 @@ class ActionHandleRouteInfo(Action):
             return []
 
     def _format_real_time_route_response(self, start_location, end_location: str, real_time_data: Dict[str, Any]) -> str:
-        # Format start location for display
-        if isinstance(start_location, tuple):
-            start_display = f"Your Location ({start_location[0]:.4f}, {start_location[1]:.4f})"
-        else:
-            start_display = start_location
+        start_display = "Your Location" if isinstance(start_location, tuple) else start_location
 
         response = f"🎯 **Real-time Route: {start_display} → {end_location}**\n\n"
 
@@ -1424,10 +1363,10 @@ class ActionGetDirectionsById(Action):
             except (ValueError, IndexError):
                 pass
 
-        # Get destination label (station name or coordinates)
+        # Get destination label
         if target_station:
             destination = target_station.get("address") or target_station.get("name") or station_id or "Destination"
-            # Try to extract station lat/lng if not yet parsed
+            # Extract station lat/lng if not yet parsed
             if dest_lat is None:
                 try:
                     dest_lat = float(target_station.get("latitude") or 0) or None
@@ -1437,46 +1376,51 @@ class ActionGetDirectionsById(Action):
         else:
             destination = station_id or "Destination"
 
-        # Build maps URL using coordinates for better embedding
-        maps_url = (
-            f"https://www.google.com/maps/search/?api=1&query={dest_lat},{dest_lng}"
-            if dest_lat is not None and dest_lng is not None
-            else ActionAdvancedDirections()._build_maps_link("My Location", destination)
-        )
+        # Build a directions URL (for "Open in Google Maps" link)
+        if user_lat is not None and dest_lat is not None:
+            maps_url = (
+                f"https://www.google.com/maps/dir/?api=1"
+                f"&origin={user_lat},{user_lng}"
+                f"&destination={dest_lat},{dest_lng}"
+                f"&travelmode=driving"
+            )
+        else:
+            maps_url = ActionAdvancedDirections()._build_maps_link("My Location", destination)
 
-        # Try to get real-time route data using direct API call with coordinates
+        # Try real-time route — call TomTom directly with float tuples (bypasses CSV geocoder)
         route_info = {}
         if (REAL_TIME_INTEGRATION_AVAILABLE and real_time_manager
-                and user_lat is not None and user_lng is not None
-                and dest_lat is not None and dest_lng is not None):
+                and real_time_manager.api_manager
+                and user_lat is not None and dest_lat is not None):
             try:
                 route_data = real_time_manager.api_manager.get_real_time_route(
-                    (user_lat, user_lng), (dest_lat, dest_lng)
+                    (float(user_lat), float(user_lng)),
+                    (float(dest_lat), float(dest_lng))
                 )
                 if route_data:
                     route_info = {
                         "distance_km": route_data.get("distance_km"),
                         "duration_minutes": route_data.get("duration_minutes"),
                         "traffic_delay_minutes": route_data.get("traffic_delay_minutes"),
-                        "instructions": route_data.get("instructions", []),
+                        "instructions": route_data.get("instructions") or [],
                     }
-            except Exception as e:
-                logger.debug(f"Could not get real-time route: {e}")
+            except Exception:
                 pass
 
-        # Send rich directions card
+        # Send rich directions card; station_lat/lng used by frontend for iframe embed URL
         dispatcher.utter_message(json_message={
             "type": "directions",
             "origin": "Your Location",
             "destination": destination,
+            "station_lat": dest_lat,
+            "station_lng": dest_lng,
             "distance_km": route_info.get("distance_km"),
             "eta_min": route_info.get("duration_minutes"),
             "delay_min": route_info.get("traffic_delay_minutes"),
-            "instructions": [str(s) for s in (route_info.get("instructions") or [])][:10],
+            "instructions": [str(s) for s in route_info.get("instructions", [])][:10],
             "maps_url": maps_url,
         })
 
-        # Persist route for traffic lookup
         start_slot = [user_lat, user_lng] if user_lat is not None and user_lng is not None else "My Location"
         return [
             SlotSet("start_location", start_slot),
