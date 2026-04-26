@@ -277,7 +277,6 @@ function addDirectionsCard(payload) {
       <a href="${payload.maps_url}" target="_blank" rel="noopener" class="btn-map">Open in Google Maps</a>
     </div>
   </div>` : ""}
-    }
     ${steps.length
       ? `<ol style="margin:8px 0 0 18px">${steps
         .slice(0, 8)

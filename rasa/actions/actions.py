@@ -1410,50 +1410,78 @@ class ActionGetDirectionsById(Action):
                 except Exception:
                     continue
 
-        # Determine origin and destination strings for maps link
         user_lat = tracker.get_slot("user_lat")
         user_lng = tracker.get_slot("user_lng")
-        origin_str = f"({user_lat}, {user_lng})" if user_lat is not None and user_lng is not None else "My Location"
 
-        if target_station is None:
-            # Fallback to using station_id directly as destination if it looks like coordinates
-            dest_hint = None
-            if isinstance(station_id, str) and "," in station_id:
-                dest_hint = station_id
-            else:
-                # Last resort: use any selected station name in slot
-                dest_hint = tracker.get_slot(
-                    "selected_station") or station_id or "Destination"
-            maps_link = ActionAdvancedDirections()._build_maps_link(origin_str, str(dest_hint))
-            dispatcher.utter_message(text=f"🧭 **Directions:** {maps_link}")
-            # Store route so traffic action can use it
-            start_slot = [user_lat, user_lng] if user_lat is not None and user_lng is not None else (
-                tracker.get_slot("current_location") or "My Location")
-            return [
-                SlotSet("start_location", start_slot),
-                SlotSet("end_location", str(dest_hint)),
-            ]
+        # Parse destination coordinates from station_id ("lat,lng" string)
+        dest_lat: Optional[float] = None
+        dest_lng: Optional[float] = None
+        if isinstance(station_id, str) and "," in station_id:
+            try:
+                parts = station_id.split(",", 1)
+                dest_lat = float(parts[0].strip())
+                dest_lng = float(parts[1].strip())
+            except (ValueError, IndexError):
+                pass
 
-        # Use station address/name
-        destination = target_station.get("address") or target_station.get(
-            "name") or station_id or "Destination"
-        maps_link = ActionAdvancedDirections()._build_maps_link(origin_str, destination)
+        # Get destination label (station name or coordinates)
+        if target_station:
+            destination = target_station.get("address") or target_station.get("name") or station_id or "Destination"
+            # Try to extract station lat/lng if not yet parsed
+            if dest_lat is None:
+                try:
+                    dest_lat = float(target_station.get("latitude") or 0) or None
+                    dest_lng = float(target_station.get("longitude") or 0) or None
+                except (TypeError, ValueError):
+                    pass
+        else:
+            destination = station_id or "Destination"
 
-        dispatcher.utter_message(text=f"🧭 **Directions:** {maps_link}")
+        # Build maps URL using coordinates for better embedding
+        maps_url = (
+            f"https://www.google.com/maps/search/?api=1&query={dest_lat},{dest_lng}"
+            if dest_lat is not None and dest_lng is not None
+            else ActionAdvancedDirections()._build_maps_link("My Location", destination)
+        )
+
+        # Try to get real-time route data using direct API call with coordinates
+        route_info = {}
+        if (REAL_TIME_INTEGRATION_AVAILABLE and real_time_manager
+                and user_lat is not None and user_lng is not None
+                and dest_lat is not None and dest_lng is not None):
+            try:
+                route_data = real_time_manager.api_manager.get_real_time_route(
+                    (user_lat, user_lng), (dest_lat, dest_lng)
+                )
+                if route_data:
+                    route_info = {
+                        "distance_km": route_data.get("distance_km"),
+                        "duration_minutes": route_data.get("duration_minutes"),
+                        "traffic_delay_minutes": route_data.get("traffic_delay_minutes"),
+                        "instructions": route_data.get("instructions", []),
+                    }
+            except Exception as e:
+                logger.debug(f"Could not get real-time route: {e}")
+                pass
+
+        # Send rich directions card
+        dispatcher.utter_message(json_message={
+            "type": "directions",
+            "origin": "Your Location",
+            "destination": destination,
+            "distance_km": route_info.get("distance_km"),
+            "eta_min": route_info.get("duration_minutes"),
+            "delay_min": route_info.get("traffic_delay_minutes"),
+            "instructions": [str(s) for s in (route_info.get("instructions") or [])][:10],
+            "maps_url": maps_url,
+        })
+
         # Persist route for traffic lookup
-        start_slot = [user_lat, user_lng] if user_lat is not None and user_lng is not None else (
-            tracker.get_slot("current_location") or "My Location")
-        responses: List[Dict[Text, Any]] = [
+        start_slot = [user_lat, user_lng] if user_lat is not None and user_lng is not None else "My Location"
+        return [
             SlotSet("start_location", start_slot),
             SlotSet("end_location", destination),
         ]
-        dispatcher.utter_message(text="Would you like real-time traffic for this route?",
-                                 buttons=[
-                                     {"title": "Yes, show traffic",
-                                         "payload": "/get_traffic_info"},
-                                     {"title": "No, thanks", "payload": "/goodbye"},
-                                 ])
-        return responses
 
 
 class ActionHandlePreferenceLocationInput(Action):
